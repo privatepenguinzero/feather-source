@@ -1,0 +1,42 @@
+name: update-source
+on:
+  schedule: [{ cron: "0 6 * * *" }]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Genera apps.json
+        run: |
+          rel=$(curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/g8row/PhotosBackup/releases/latest)
+          jq -n --argjson r "$rel" '
+            ($r.assets[] | select(.name | endswith(".ipa"))) as $a |
+            {
+              name: "PhotosBackup Source",
+              identifier: "com.privatepenguinzero.photosbackup.source",
+              apps: [{
+                name: "Photos Backup",
+                bundleIdentifier: "com.g8row.photosbackup",
+                developerName: "g8row",
+                localizedDescription: ($r.body // ""),
+                iconURL: "https://github.com/g8row/PhotosBackup/raw/main/App/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+                versions: [{
+                  version: ($r.tag_name | ltrimstr("v")),
+                  date: $r.published_at,
+                  localizedDescription: ($r.body // ""),
+                  downloadURL: $a.browser_download_url,
+                  size: $a.size,
+                  minOSVersion: "15.0"
+                }]
+              }]
+            }' > apps.json
+      - name: Commit
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add apps.json
+          git diff --quiet --cached || (git commit -m "update source" && git push)
